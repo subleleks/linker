@@ -164,15 +164,15 @@ int main(int argc, char* argv[]) {
         switch (ref.second) {
           case A:
             file.mem[ref.first] &= A_MASK;
-            file.mem[ref.first] |= (ADDRESS_MASK & (symbols[sym.first] - (ref.first + file.offset))) << 2*ADDRESS_WIDTH;
+            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 2*ADDRESS_WIDTH;
             break;
           case B:
             file.mem[ref.first] &= B_MASK;
-            file.mem[ref.first] |= (ADDRESS_MASK & (symbols[sym.first] - (ref.first + file.offset))) << 1*ADDRESS_WIDTH;
+            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 1*ADDRESS_WIDTH;
             break;
           case J:
             file.mem[ref.first] &= J_MASK;
-            file.mem[ref.first] |= (ADDRESS_MASK & (symbols[sym.first] - (ref.first + file.offset))) << 0*ADDRESS_WIDTH;
+            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 0*ADDRESS_WIDTH;
             break;
         }
       }
