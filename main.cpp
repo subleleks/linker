@@ -137,7 +137,7 @@ struct ObjectFile {
 
 int main(int argc, char* argv[]) {
   if (argc < 3) {
-    fprintf(stderr, "Usage mode: subleq-linker <subleq_object_files...> <mem_init_file>\n");
+    fprintf(stderr, "Usage mode: subleq-ld <subleq_object_files...> <mem_init_file>\n");
     return 0;
   }
   
