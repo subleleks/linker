@@ -5,5 +5,5 @@ C++ program to link multiple subleq object files into one memory initialization 
 
 ```
 To compile: make
-Usage mode: subleq-ld <subleq_object_files...> <mem_init_file>
+Usage mode: subleq-ld <object_files...> <meminit_file>
 ```
