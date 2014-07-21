@@ -7,25 +7,30 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <cstdio>
 #include <fstream>
 #include <list>
 #include <map>
 #include <string>
-#include <utility>
 
 using namespace std;
 
 typedef int64_t  word_t;
 typedef uint64_t uword_t;
-typedef int32_t  address_t;
+typedef uint32_t address_t;
 
 enum field_t {
   A, B, J
 };
 
+struct InstrAbsAddresses {
+  bool a, b, j;
+  InstrAbsAddresses() : a(false), b(false), j(false) {}
+};
+
 #ifndef MEM_WORDS
-#define MEM_WORDS 8192
+#define MEM_WORDS 0x2000
 #endif
 
 #ifndef WORD_WIDTH
@@ -34,14 +39,16 @@ enum field_t {
 
 const address_t ADDRESS_MASK  = MEM_WORDS - 1;
 const uword_t   ADDRESS_WIDTH = log2(MEM_WORDS);
-const uword_t   A_MASK        = ~(((uword_t)(MEM_WORDS - 1)) << 2*ADDRESS_WIDTH);
-const uword_t   B_MASK        = ~(((uword_t)(MEM_WORDS - 1)) << 1*ADDRESS_WIDTH);
-const uword_t   J_MASK        = ~(((uword_t)(MEM_WORDS - 1)) << 0*ADDRESS_WIDTH);
+const uword_t   A_MASK        = ~(uword_t(ADDRESS_MASK) << 2*ADDRESS_WIDTH);
+const uword_t   B_MASK        = ~(uword_t(ADDRESS_MASK) << 1*ADDRESS_WIDTH);
+const uword_t   J_MASK        = ~(uword_t(ADDRESS_MASK) << 0*ADDRESS_WIDTH);
 
 struct ObjectFile {
     address_t offset;
+    address_t text_offset;
     map<string, address_t> exported;
     map<string, list<pair<address_t, field_t>>> imported;
+    map<address_t, InstrAbsAddresses> absolute;
     address_t mem_size;
     uword_t* mem;
     
@@ -51,7 +58,8 @@ struct ObjectFile {
     
     void initStart() {
       offset = 0;
-      imported["start"].push_back(pair<address_t, field_t>(0, J));
+      text_offset = 0;
+      imported["start"].emplace_back(0, J);
       mem_size = 2;
       mem = new uword_t[2];
       mem[0] = 0x0000000004002000;
@@ -64,6 +72,9 @@ struct ObjectFile {
       ifstream f(fn);
       
       uint32_t tmp1, tmp2;
+      
+      // read text section offset
+      f.read((char*)&text_offset, sizeof(address_t));
       
       // read number of exported symbols
       f.read((char*)&tmp1, sizeof(uint32_t));
@@ -110,7 +121,7 @@ struct ObjectFile {
         f.read((char*)&tmp2, sizeof(uint32_t));
         
         // read references to current symbol
-        for (uint32_t i = 0; i < tmp2; ++i) {
+        for (uint32_t j = 0; j < tmp2; ++j) {
           address_t addr;
           field_t field;
           
@@ -120,7 +131,28 @@ struct ObjectFile {
           // field
           f.read((char*)&field, sizeof(uint32_t));
           
-          imported[sym].push_back(pair<address_t, field_t>(addr, field));
+          imported[sym].emplace_back(addr, field);
+        }
+      }
+      
+      // read number of absolute addresses
+      f.read((char*)&tmp1, sizeof(uint32_t));
+      
+      // read absolute addresses
+      for (uint32_t i = 0; i < tmp1; ++i) {
+        address_t addr;
+        field_t field;
+        
+        // address
+        f.read((char*)&addr, sizeof(uint32_t));
+        
+        // field
+        f.read((char*)&field, sizeof(uint32_t));
+        
+        switch (field) {
+          case A: absolute[addr].a = true; break;
+          case B: absolute[addr].b = true; break;
+          case J: absolute[addr].j = true; break;
         }
       }
       
@@ -135,9 +167,17 @@ struct ObjectFile {
     }
 };
 
+inline void relocate(uword_t& instr, field_t field, address_t file_offset) {
+  int mult = field == A ? 2 : (field == B ? 1 : 0);
+  uword_t mask = field == A ? A_MASK : (field == B ? B_MASK : J_MASK);
+  address_t tmp = ((instr >> mult*ADDRESS_WIDTH) & ADDRESS_MASK) + file_offset;
+  instr &= mask;
+  instr |= (uword_t(tmp) << mult*ADDRESS_WIDTH);
+}
+
 int main(int argc, char* argv[]) {
   if (argc < 3) {
-    fprintf(stderr, "Usage mode: subleq-ld <subleq_object_files...> <mem_init_file>\n");
+    fprintf(stderr, "Usage mode: subleq-ld <object_files...> <meminit_file>\n");
     return 0;
   }
   
@@ -150,37 +190,59 @@ int main(int argc, char* argv[]) {
   // assemble global symbol table
   map<string, address_t> symbols;
   for (auto& file : files) {
-    for (auto& sym : file.exported)
+    for (auto& sym : file.exported) {
       symbols[sym.first] = sym.second + file.offset;
+    }
   }
   
   // link
-  address_t ip = 0;
-  uword_t mem[MEM_WORDS];
+  address_t mem_size = 0;
+  uword_t* mem = new uword_t[MEM_WORDS];
   for (auto& file : files) {
+    // relocate addresses
+    for (address_t i = file.text_offset; i < file.mem_size; ++i) {
+      InstrAbsAddresses absAddr;
+      auto it = file.absolute.find(i);
+      if (it != file.absolute.end()) {
+        absAddr = it->second;
+      }
+      uword_t& instr = file.mem[i];
+      if (!absAddr.a) {
+        relocate(instr, A, file.offset);
+      }
+      if (!absAddr.b) {
+        relocate(instr, B, file.offset);
+      }
+      if (!absAddr.j) {
+        relocate(instr, J, file.offset);
+      }
+    }
+    
     // solve pendencies for this file
     for (auto& sym : file.imported) {
+      uword_t sym_addr = uword_t(symbols[sym.first]);
       for (auto& ref : sym.second) {
+        uword_t& instr = file.mem[ref.first];
         switch (ref.second) {
           case A:
-            file.mem[ref.first] &= A_MASK;
-            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 2*ADDRESS_WIDTH;
+            instr &= A_MASK;
+            instr |= (sym_addr << 2*ADDRESS_WIDTH);
             break;
           case B:
-            file.mem[ref.first] &= B_MASK;
-            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 1*ADDRESS_WIDTH;
+            instr &= B_MASK;
+            instr |= (sym_addr << 1*ADDRESS_WIDTH);
             break;
           case J:
-            file.mem[ref.first] &= J_MASK;
-            file.mem[ref.first] |= ((uword_t)((symbols[sym.first] - (ref.first + file.offset)) & ADDRESS_MASK)) << 0*ADDRESS_WIDTH;
+            instr &= J_MASK;
+            instr |= (sym_addr << 0*ADDRESS_WIDTH);
             break;
         }
       }
     }
     
     // copy mem
-    for (address_t i = 0; i < file.mem_size; ++i)
-      mem[ip++] = file.mem[i];
+    memcpy(&mem[mem_size], file.mem, file.mem_size*sizeof(uword_t));
+    mem_size += file.mem_size;
   }
   
   // output mif
@@ -193,7 +255,7 @@ int main(int argc, char* argv[]) {
   f << "CONTENT\n";
   f << "BEGIN\n";
   f << "\n";
-  for (address_t i = 0; i < ip; ++i) {
+  for (address_t i = 0; i < mem_size; ++i) {
     sprintf(buf, "%08x", i);
     f << buf;
     sprintf(buf, "%016llx", mem[i]);
@@ -202,6 +264,8 @@ int main(int argc, char* argv[]) {
   f << "\n";
   f << "END;\n";
   f.close();
+  
+  delete[] mem;
   
   return 0;
 }
