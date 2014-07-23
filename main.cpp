@@ -69,13 +69,13 @@ struct ObjectFile {
     void read(const char* fn, address_t offs) {
       offset = offs;
       
-      fstream f(fn);
+      fstream f(fn, fstream::in | fstream);
       
       uint32_t tmp1, tmp2;
       
       // read text section offset
       f.read((char*)&text_offset, sizeof(address_t));
-      printf("%d %d\n", int(f.tellg()), sizeof(address_t));
+      
       // read number of exported symbols
       f.read((char*)&tmp1, sizeof(uint32_t));
       
@@ -161,12 +161,7 @@ struct ObjectFile {
       
       // read assembled code
       mem = new uword_t[mem_size];
-      //f.read((char*)mem, sizeof(uword_t)*mem_size);
-      for (address_t i = 0; i < mem_size; i++) {
-        uword_t tmps;
-        f.read((char*)&tmps, sizeof(uword_t));
-        printf("%d: %016llX %d\n", i, tmps, int(f.tellg()));
-      }
+      f.read((char*)mem, sizeof(uword_t)*mem_size);
       
       f.close();
     }
