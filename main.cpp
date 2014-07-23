@@ -69,7 +69,7 @@ struct ObjectFile {
     void read(const char* fn, address_t offs) {
       offset = offs;
       
-      fstream f(fn, fstream::in | fstream);
+      fstream f(fn, fstream::in | fstream::binary);
       
       uint32_t tmp1, tmp2;
       
@@ -246,7 +246,7 @@ int main(int argc, char* argv[]) {
   }
   
   // output mif
-  fstream f(argv[argc - 1], fstream::out | fstream::binary);
+  fstream f(argv[argc - 1], fstream::out);
   char buf[20];
   f << "DEPTH = " << MEM_WORDS << ";\n";
   f << "WIDTH = " << WORD_WIDTH << ";\n";
