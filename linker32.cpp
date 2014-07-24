@@ -208,37 +208,40 @@ int linker32(int argc, char* argv[]) {
   fstream f(argv[argc - 1], fstream::out | fstream::binary);
   uword_t tmp;
   
-  // write number of exported symbols
-  tmp = symbols.size();
-  f.write((const char*)&tmp, sizeof(uword_t));
-  
-  // write exported symbols
-  for (auto& sym : symbols) {
-    // string
-    f.write(sym.first.c_str(), sym.first.size() + 1);
-    
-    // address
-    tmp = sym.second;
-    f.write((const char*)&tmp, sizeof(uword_t));
-  }
-  
-  // write number of symbols of pending references
-  tmp = references.size();
-  f.write((const char*)&tmp, sizeof(uword_t));
-  
-  // write symbols of pending references
-  for (auto& sym : references) {
-    // string
-    f.write(sym.first.c_str(), sym.first.size() + 1);
-    
-    // write number of references to current symbol
-    tmp = sym.second.size();
+  // symbol information is only needed for object files
+  if (!executable) {
+    // write number of exported symbols
+    tmp = symbols.size();
     f.write((const char*)&tmp, sizeof(uword_t));
     
-    // write references to current symbol
-    for (auto ref : sym.second) {
-      tmp = ref;
+    // write exported symbols
+    for (auto& sym : symbols) {
+      // string
+      f.write(sym.first.c_str(), sym.first.size() + 1);
+      
+      // address
+      tmp = sym.second;
       f.write((const char*)&tmp, sizeof(uword_t));
+    }
+    
+    // write number of symbols of pending references
+    tmp = references.size();
+    f.write((const char*)&tmp, sizeof(uword_t));
+    
+    // write symbols of pending references
+    for (auto& sym : references) {
+      // string
+      f.write(sym.first.c_str(), sym.first.size() + 1);
+      
+      // write number of references to current symbol
+      tmp = sym.second.size();
+      f.write((const char*)&tmp, sizeof(uword_t));
+      
+      // write references to current symbol
+      for (auto ref : sym.second) {
+        tmp = ref;
+        f.write((const char*)&tmp, sizeof(uword_t));
+      }
     }
   }
   
