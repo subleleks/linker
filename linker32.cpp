@@ -39,14 +39,14 @@ struct ObjectFile32 {
     
     void setStarter() {
       offset = 0;
-      imported["start"].emplace(3);
+      imported["start"].emplace(2);
+      relative.emplace(0);
       relative.emplace(1);
       relative.emplace(2);
-      relative.emplace(3);
       mem_size = 4;
       mem = new uword_t[4];
-      mem[0] = 0;
-      mem[1] = 0;
+      mem[0] = 3;
+      mem[1] = 3;
       mem[2] = 0;
       mem[3] = 0;
     }
