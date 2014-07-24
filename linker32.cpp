@@ -37,6 +37,20 @@ struct ObjectFile32 {
       delete[] mem;
     }
     
+    void setStarter() {
+      offset = 0;
+      imported["start"].emplace(3);
+      relative.emplace(1);
+      relative.emplace(2);
+      relative.emplace(3);
+      mem_size = 4;
+      mem = new uword_t[4];
+      mem[0] = 0;
+      mem[1] = 0;
+      mem[2] = 0;
+      mem[3] = 0;
+    }
+    
     void read(const char* fn, uword_t offs) {
       offset = offs;
       
@@ -125,11 +139,19 @@ int linker32(int argc, char* argv[]) {
     return 0;
   }
   
+  bool executable = string(argv[1]) == "-exec";
+  
   // read object files
   ObjectFile32 files[argc - 2];
-  files[0].read(argv[1], 0);
-  for (int i = 2; i < argc - 1; ++i)
-    files[i].read(argv[i], files[i - 1].offset + files[i - 1].mem_size);
+  if (executable) {
+    files[0].setStarter();
+  }
+  else {
+    files[0].read(argv[1], 0);
+  }
+  for (int i = 1; i < argc - 2; ++i) {
+    files[i].read(argv[i + 1], files[i - 1].offset + files[i - 1].mem_size);
+  }
   
   uword_t mem_size = 0;
   uword_t* mem = new uword_t[MEM_WORDS];
@@ -176,8 +198,64 @@ int linker32(int argc, char* argv[]) {
     }
   }
   
+  // output
+  fstream f(argv[argc - 1], fstream::out | fstream::binary);
+  uword_t tmp;
+  
+  // write number of exported symbols
+  tmp = symbols.size();
+  f.write((const char*)&tmp, sizeof(uword_t));
+  
+  // write exported symbols
+  for (auto& sym : symbols) {
+    // string
+    f.write(sym.first.c_str(), sym.first.size() + 1);
+    
+    // address
+    tmp = sym.second;
+    f.write((const char*)&tmp, sizeof(uword_t));
+  }
+  
+  // write number of symbols of pending references
+  tmp = references.size();
+  f.write((const char*)&tmp, sizeof(uword_t));
+  
+  // write symbols of pending references
+  for (auto& sym : references) {
+    // string
+    f.write(sym.first.c_str(), sym.first.size() + 1);
+    
+    // write number of references to current symbol
+    tmp = sym.second.size();
+    f.write((const char*)&tmp, sizeof(uword_t));
+    
+    // write references to current symbol
+    for (auto ref : sym.second) {
+      tmp = ref;
+      f.write((const char*)&tmp, sizeof(uword_t));
+    }
+  }
+  
+  // write number of relative addresses
+  tmp = relatives.size();
+  f.write((const char*)&tmp, sizeof(uword_t));
+  
+  // write relative addresses
+  for (auto addr : relatives) {
+    tmp = addr;
+    f.write((const char*)&tmp, sizeof(uword_t));
+  }
+  
+  // write assembled code size
+  f.write((const char*)&mem_size, sizeof(uword_t));
+  
+  // write assembled code
+  f.write((const char*)mem, sizeof(uword_t)*mem_size);
+  
+  f.close();
+  
   // output mif
-  fstream f(argv[argc - 1], fstream::out);
+  f.open((string(argv[argc - 1]) + ".mif").c_str(), fstream::out);
   char buf[20];
   f << "DEPTH = " << MEM_WORDS << ";\n";
   f << "WIDTH = " << WORD_WIDTH << ";\n";
