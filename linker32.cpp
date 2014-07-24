@@ -146,18 +146,31 @@ int linker32(int argc, char* argv[]) {
   for (int i = 1; i < argc - 1; ++i)
     files[i].read(argv[i], files[i - 1].offset + files[i - 1].mem_size);
   
-  // assemble global symbol table
+  uword_t mem_size = 0;
+  uword_t* mem = new uword_t[MEM_WORDS];
   map<string, uword_t> symbols;
+  map<string, set<uword_t>> references;
+  set<uword_t> absolutes;
+  
   for (auto& file : files) {
+    // assemble global symbol table
     for (auto& sym : file.exported) {
       symbols[sym.first] = sym.second + file.offset;
     }
-  }
-  
-  // link
-  uword_t mem_size = 0;
-  uword_t* mem = new uword_t[MEM_WORDS];
-  for (auto& file : files) {
+    
+    // assemble global reference table
+    for (auto& sym : file.imported) {
+      set<uword_t>& refs = references[sym.first];
+      for (auto addr : sym.second) {
+        refs.emplace(addr + file.offset);
+      }
+    }
+    
+    // assemble global absolute address table
+    for (auto addr : file.absolute) {
+      absolutes.emplace(addr + file.offset);
+    }
+    
     // relocate addresses
     for (uword_t i = file.text_offset; i < file.mem_size; ++i) {
       auto it = file.absolute.find(i);
@@ -166,17 +179,23 @@ int linker32(int argc, char* argv[]) {
       }
     }
     
-    // solve pendencies for this file
-    for (auto& sym : file.imported) {
-      uword_t sym_addr = symbols[sym.first];
-      for (auto ref : sym.second) {
-        file.mem[ref] = sym_addr;
-      }
-    }
-    
-    // copy mem
+    // copy object code
     memcpy(&mem[mem_size], file.mem, file.mem_size*sizeof(uword_t));
     mem_size += file.mem_size;
+  }
+  
+  // solve references
+  for (auto ref = references.begin(); ref != references.end();) {
+    auto sym = symbols.find(ref->first);
+    if (sym == symbols.end()) {
+      ref++;
+    }
+    else {
+      for (auto addr : ref->second) {
+        mem[addr] = sym->second;
+      }
+      references.erase(ref++);
+    }
   }
   
   // output mif
