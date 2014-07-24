@@ -166,17 +166,23 @@ int linker32(int argc, char* argv[]) {
     }
     
     // assemble global reference table
+    set<uword_t> pendingReferences;
     for (auto& sym : file.imported) {
       set<uword_t>& refs = references[sym.first];
       for (auto addr : sym.second) {
         refs.emplace(addr + file.offset);
+        pendingReferences.emplace(addr);
       }
     }
     
     // assemble global relative address table
     for (auto addr : file.relative) {
       relatives.emplace(addr + file.offset);
-      file.mem[addr] += file.offset; // relocating
+      
+      // relocate only resolved addresses
+      if (pendingReferences.find(addr) == pendingReferences.end()) {
+        file.mem[addr] += file.offset;
+      }
     }
     
     // copy object code
@@ -184,7 +190,7 @@ int linker32(int argc, char* argv[]) {
     mem_size += file.mem_size;
   }
   
-  // solve references
+  // resolve references
   for (auto ref = references.begin(); ref != references.end();) {
     auto sym = symbols.find(ref->first);
     if (sym == symbols.end()) {
@@ -192,7 +198,7 @@ int linker32(int argc, char* argv[]) {
     }
     else {
       for (auto addr : ref->second) {
-        mem[addr] = sym->second;
+        mem[addr] += sym->second;
       }
       references.erase(ref++);
     }
