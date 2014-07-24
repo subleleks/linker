@@ -27,26 +27,14 @@ typedef uint32_t uword_t;
 
 struct ObjectFile32 {
     uword_t offset;
-    uword_t text_offset;
     map<string, uword_t> exported;
     map<string, set<uword_t>> imported;
-    set<uword_t> absolute;
+    set<uword_t> relative;
     uword_t mem_size;
     uword_t* mem;
     
     ~ObjectFile32() {
       delete[] mem;
-    }
-    
-    void initStart() {
-      offset = 0;
-      text_offset = 0;
-      imported["start"].emplace(2);
-      mem_size = 3;
-      mem = new uword_t[3];
-      mem[0] = 0;
-      mem[1] = 0;
-      mem[2] = 0;
     }
     
     void read(const char* fn, uword_t offs) {
@@ -55,9 +43,6 @@ struct ObjectFile32 {
       fstream f(fn, fstream::in | fstream::binary);
       
       uword_t tmp;
-      
-      // read text section offset
-      f.read((char*)&text_offset, sizeof(uword_t));
       
       // read number of exported symbols
       f.read((char*)&tmp, sizeof(uword_t));
@@ -113,14 +98,14 @@ struct ObjectFile32 {
         }
       }
       
-      // read number of absolute addresses
+      // read number of relative addresses
       f.read((char*)&tmp, sizeof(uword_t));
       
-      // read absolute addresses
+      // read relative addresses
       for (uword_t i = 0; i < tmp; ++i) {
         uword_t addr;
         f.read((char*)&addr, sizeof(uword_t));
-        absolute.emplace(addr);
+        relative.emplace(addr);
       }
       
       // read assembled code size
@@ -141,16 +126,16 @@ int linker32(int argc, char* argv[]) {
   }
   
   // read object files
-  ObjectFile32 files[argc - 1];
-  files[0].initStart();
-  for (int i = 1; i < argc - 1; ++i)
+  ObjectFile32 files[argc - 2];
+  files[0].read(argv[1], 0);
+  for (int i = 2; i < argc - 1; ++i)
     files[i].read(argv[i], files[i - 1].offset + files[i - 1].mem_size);
   
   uword_t mem_size = 0;
   uword_t* mem = new uword_t[MEM_WORDS];
   map<string, uword_t> symbols;
   map<string, set<uword_t>> references;
-  set<uword_t> absolutes;
+  set<uword_t> relatives;
   
   for (auto& file : files) {
     // assemble global symbol table
@@ -166,17 +151,10 @@ int linker32(int argc, char* argv[]) {
       }
     }
     
-    // assemble global absolute address table
-    for (auto addr : file.absolute) {
-      absolutes.emplace(addr + file.offset);
-    }
-    
-    // relocate addresses
-    for (uword_t i = file.text_offset; i < file.mem_size; ++i) {
-      auto it = file.absolute.find(i);
-      if (it == file.absolute.end()) {
-        file.mem[i] += file.offset;
-      }
+    // assemble global relative address table
+    for (auto addr : file.relative) {
+      relatives.emplace(addr + file.offset);
+      file.mem[addr] += file.offset; // relocating
     }
     
     // copy object code
