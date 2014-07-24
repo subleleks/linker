@@ -1,2 +1,2 @@
 all:
-	g++ main.cpp -o subleq-ld -std=c++11
+	g++ *.cpp -o subleq-ld -std=c++11
